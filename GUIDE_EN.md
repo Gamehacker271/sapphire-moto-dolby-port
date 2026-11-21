@@ -203,22 +203,23 @@ Insert the effect definitions with their exact UUIDs inside the `<effects>` bloc
     </effects>
 ```
 
-### Step 3: Configure `<postprocess>` — THE CRITICAL CONTROL RULE
+### Step 3: Configure `<postprocess>` — THE CRITICAL CONTROL RULE & VALID STREAMS
 
 > [!IMPORTANT]
-> **FUNDAMENTAL RULE:**
-> **UNDER NO CIRCUMSTANCES** should you add `<apply effect="dap_mod"/>` inside the `<postprocess>` section.
+> **FUNDAMENTAL POSTPROCESS RULES:**
+> 1. **NEVER** declare `<apply effect="dap_mod"/>` in `<postprocess>`.
+> 2. **ONLY** declare stream types supported by Qualcomm SM6225 (`music`, `ring`, `alarm`, `notification`). **DO NOT** add unsupported stream types like `patch`, `rerouting`, `accessibility`, or `call_assistant`, as Qualcomm's HAL parser (`EffectsConfig`) will fail and reject the entire configuration file.
 
-#### Why?
+#### Why avoid `dap_mod` in `<postprocess>`?
 When you add `dap_mod` to `<postprocess>`, `audioserver` automatically instantiates `DAP_offload` (UUID `9d4921da`) on Session 0 at boot. Because `audioserver` connects first, AudioFlinger grants it **`Ctrl=yes`** (exclusive control). When `daxService` later attempts to connect, it receives **`Ctrl=no`** and enters an endless retry loop:
 ```
 waitForDolbyControl: daxservice waiting for control...
 DolbyAudioEffects is not accessible!
 ```
-The result is the classic bug: the UI opens and sliders move, but **audio output is completely unaffected**.
+The result is the classic bug: the UI opens and sliders move, but audio output is completely unaffected.
 
-#### Correct `<postprocess>` Configuration:
-Only apply `moto_sst`, volume listeners (`dvl_*`), and `gamedap_mod` on patch/rerouting streams. Keep `dap_mod` unassigned here so `daxService` acts as the sole client and is granted `Ctrl=yes`:
+#### Correct & Safe `<postprocess>` Configuration:
+Apply only `moto_sst` (Motorola Spatial Sound) and volume listeners (`dvl_*`) on supported streams. Leave `dap_mod` unassigned here so `daxService` acts as the sole client and is granted `Ctrl=yes`:
 
 ```xml
     <postprocess>
@@ -234,37 +235,9 @@ Only apply `moto_sst`, volume listeners (`dvl_*`), and `gamedap_mod` on patch/re
             <apply effect="moto_sst"/>
             <apply effect="dvl_alarm"/>
         </stream>
-        <stream type="system">
-            <apply effect="moto_sst"/>
-            <apply effect="dvl_system"/>
-        </stream>
-        <stream type="voice_call">
-        </stream>
         <stream type="notification">
             <apply effect="moto_sst"/>
             <apply effect="dvl_notification"/>
-        </stream>
-        <stream type="bluetooth_sco">
-        </stream>
-        <stream type="dtmf">
-        </stream>
-        <stream type="enforced_audible">
-        </stream>
-        <stream type="accessibility">
-        </stream>
-        <stream type="tts">
-        </stream>
-        <stream type="assistant">
-        </stream>
-        <stream type="call_assistant">
-        </stream>
-        <stream type="patch">
-            <apply effect="moto_sst"/>
-            <apply effect="gamedap_mod"/>
-        </stream>
-        <stream type="rerouting">
-            <apply effect="moto_sst"/>
-            <apply effect="gamedap_mod"/>
         </stream>
     </postprocess>
 ```

@@ -203,22 +203,23 @@ Añade las siguientes líneas dentro de la etiqueta `<effects>`:
     </effects>
 ```
 
-### Paso 3: Configurar `<postprocess>` — EL ERROR CRÍTICO DEL CONTROL
+### Paso 3: Configurar `<postprocess>` — EL ERROR CRÍTICO DEL CONTROL Y TIPOS DE STREAM VÁLIDOS
 
 > [!IMPORTANT]
-> **REGLA FUNDAMENTAL:**
-> **BAJO NINGUNA CIRCUNSTANCIA** agregues `<apply effect="dap_mod"/>` dentro de la sección `<postprocess>`.
+> **REGLAS FUNDAMENTALES DE POSTPROCESS:**
+> 1. **NUNCA** agregues `<apply effect="dap_mod"/>` en `<postprocess>`.
+> 2. **SOLO** usa tipos de stream compatibles con Qualcomm SM6225 (`music`, `ring`, `alarm`, `notification`). **NO** agregues tipos como `patch`, `rerouting`, `accessibility` o `call_assistant`, ya que el parser del HAL (`EffectsConfig`) fallará y rechazará cargar el archivo completo.
 
-#### ¿Por qué?
+#### ¿Por qué no poner `dap_mod` en `<postprocess>`?
 Cuando agregas `dap_mod` en `<postprocess>`, `audioserver` crea automáticamente una instancia del efecto en la Sesión 0 durante el inicio del sistema. Debido a que `audioserver` conecta primero, `AudioFlinger` le otorga **`Ctrl=yes`** (control exclusivo). Cuando la app `daxService` intenta inicializarse, recibe **`Ctrl=no`** y entra en un bucle infinito:
 ```
 waitForDolbyControl: daxservice waiting for control...
 DolbyAudioEffects is not accessible!
 ```
-El resultado es el clásico fallo: la interfaz de Dolby abre, los deslizadores se mueven, pero **el sonido no cambia en absoluto**.
+El resultado es el clásico fallo: la interfaz de Dolby abre, los deslizadores se mueven, pero el sonido no cambia.
 
-#### Edición Correcta de `<postprocess>`:
-Aplica únicamente `moto_sst`, los niveladores `dvl_*`, y `gamedap_mod` en los flujos auxiliares. `dap_mod` debe quedar libre para que `daxService` sea su único cliente y obtenga `Ctrl=yes`:
+#### Edición Correcta y Segura de `<postprocess>`:
+Aplica únicamente `moto_sst` (Motorola Spatial Sound) y los niveladores `dvl_*` en los streams compatibles. `dap_mod` debe quedar libre para que `daxService` sea su único cliente y obtenga `Ctrl=yes`:
 
 ```xml
     <postprocess>
@@ -234,37 +235,9 @@ Aplica únicamente `moto_sst`, los niveladores `dvl_*`, y `gamedap_mod` en los f
             <apply effect="moto_sst"/>
             <apply effect="dvl_alarm"/>
         </stream>
-        <stream type="system">
-            <apply effect="moto_sst"/>
-            <apply effect="dvl_system"/>
-        </stream>
-        <stream type="voice_call">
-        </stream>
         <stream type="notification">
             <apply effect="moto_sst"/>
             <apply effect="dvl_notification"/>
-        </stream>
-        <stream type="bluetooth_sco">
-        </stream>
-        <stream type="dtmf">
-        </stream>
-        <stream type="enforced_audible">
-        </stream>
-        <stream type="accessibility">
-        </stream>
-        <stream type="tts">
-        </stream>
-        <stream type="assistant">
-        </stream>
-        <stream type="call_assistant">
-        </stream>
-        <stream type="patch">
-            <apply effect="moto_sst"/>
-            <apply effect="gamedap_mod"/>
-        </stream>
-        <stream type="rerouting">
-            <apply effect="moto_sst"/>
-            <apply effect="gamedap_mod"/>
         </stream>
     </postprocess>
 ```
