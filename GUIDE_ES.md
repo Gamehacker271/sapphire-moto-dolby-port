@@ -169,6 +169,17 @@ Colocar en `system/etc/default-permissions/`:
 
 ---
 
+### C. Partición System_ext (`/system_ext`) [Requerido en ROMs Xiaomi / HyperOS]
+
+#### 1. Biblioteca de Parche de Efectos de Audio
+* `system_ext/lib64/libaudiopolicyserviceimpl.so`
+
+> [!NOTE]
+> **Bypass de Lista Blanca de Xiaomi (HyperOS 1 y 2):**
+> En HyperOS / MIUI, Xiaomi incorpora un filtro restrictivo en `libaudiopolicyserviceimpl.so` (`isEffectSupportedByPolicy`) que rechaza el registro o enlace de efectos de terceros sobre la Sesión Global (Sesión 0). El binario parcheado incluido neutraliza esta comprobación. En ROMs AOSP limpias (PixelOS, LineageOS, crDroid), este archivo **no** es necesario ya que el framework AOSP no implementa este bloqueo.
+
+---
+
 ## 4. Guía de Edición Manual de `audio_effects.xml`
 
 > [!CAUTION]

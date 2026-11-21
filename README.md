@@ -29,13 +29,16 @@ All necessary proprietary binaries, apps, libraries, configs, and VINTF fragment
 │   │   └── daxService/
 │   ├── framework/                       # Moto Core & Core Addon framework JARs
 │   └── etc/                             # Permissions, sysconfig & default-permissions
+├── system_ext/                          # Optional /system_ext overrides (HyperOS whitelist bypass)
+│   └── lib64/                           # Patched libaudiopolicyserviceimpl.so
 └── vendor/                              # Files to copy into extracted /vendor
     ├── bin/hw/                          # vendor.dolby.hardware.dms@2.0-service
     ├── etc/
     │   ├── aualgo/                      # aualgo_sst.conf
     │   ├── dolby/                       # dax-default.xml
     │   ├── init/                        # vendor.dolby.hardware.dms@2.0-service.rc
-    │   └── vintf/manifest/              # vendor.dolby.hardware.dms.xml
+    │   ├── vintf/manifest/              # vendor.dolby.hardware.dms.xml
+    │   └── audio_effects.xml            # Working reference audio effects configuration
     ├── lib/                             # 32-bit codecs & soundfx libraries
     └── lib64/                           # 64-bit codecs & soundfx libraries
 ```
