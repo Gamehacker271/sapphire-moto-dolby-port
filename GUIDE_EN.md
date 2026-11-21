@@ -80,6 +80,10 @@ Place the following files in the extracted `vendor/` directory, respecting relat
 * `vendor/etc/dolby/dax-default.xml` *(DSP tuning and equalizer profiles for SM6225)*
 * `vendor/etc/aualgo/aualgo_sst.conf` *(Motorola Smart Sound tuning parameters)*
 
+> [!IMPORTANT]
+> **10 DAX Profiles vs 9 Profiles:**
+> The `dax-default.xml` file provided in this repository is sourced from Motorola and defines the 10 profiles expected by the UI (Dynamic, Movie, Music, Custom, Mobility_default, Mobility_on_the_go, Mobility_commute, Mobility_travel, Game [8], and Voice [9]). If you use Xiaomi's stock `dax-default.xml` (which only defines 9 profiles 0 through 8), the UI will crash with `DolbyAudioEffect: Invalid profile index9` and hang indefinitely on "Loading" when entering profile settings.
+
 #### 4. Shared Libraries (`.so`)
 * Inside `vendor/lib64/soundfx/` and `vendor/lib/soundfx/`:
   * `libdlbvol.so` (Dolby Volume Listener)
@@ -94,7 +98,12 @@ Place the following files in the extracted `vendor/` directory, respecting relat
   * `libdlbpreg.so`
   * `libstagefrightdolby.so`
   * `libstagefright_fdtn_dolby.so`
+  * `libaualgo_foundation.so` *(Mandatory dependency for libmsstwrapper in vendor namespace)*
   * `libaualgo_sst_component.so`
+
+> [!NOTE]
+> **VNDK Linker Namespace Isolation:**
+> `libmsstwrapper.so` (Spatial Audio) links against `libaualgo_foundation.so`. On Android 14/15, Treble linker namespace isolation prevents vendor libraries from loading dependencies placed in `/system/lib64/`. Therefore, `libaualgo_foundation.so` MUST be placed directly in `/vendor/lib64/` and `/vendor/lib/`.
 
 ---
 
