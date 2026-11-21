@@ -35,10 +35,12 @@ All necessary proprietary binaries, apps, libraries, configs, and VINTF fragment
     ├── bin/hw/                          # vendor.dolby.hardware.dms@2.0-service
     ├── etc/
     │   ├── aualgo/                      # aualgo_sst.conf
+    │   ├── audio/                       # audio_policy_configuration.xml (deep_buffer removed)
     │   ├── dolby/                       # dax-default.xml
     │   ├── init/                        # vendor.dolby.hardware.dms@2.0-service.rc
     │   ├── vintf/manifest/              # vendor.dolby.hardware.dms.xml
-    │   └── audio_effects.xml            # Working reference audio effects configuration
+    │   ├── audio_effects.xml            # Working reference audio effects configuration
+    │   └── audio_policy_configuration.xml # Working reference audio policy configuration
     ├── lib/                             # 32-bit codecs & soundfx libraries
     └── lib64/                           # 64-bit codecs & soundfx libraries
 ```
@@ -79,6 +81,10 @@ AFTER (Fixed - DaxService has exclusive control):
 ### 2. SELinux CIL Injection in Modern Android Images
 * **The Cause:** `daxservice` runs as `priv_app`, while `vendor.dolby.hardware.dms@2.0-service` runs as `hal_dms_default`. On Android 14/15, cross-domain HwBinder object transfers are denied by default (`avc: denied { transfer }`), causing `RemoteException: HwBinder Error: (-2147483646)`.
 * **The Fix:** The guide details how to inject bidirectional Binder rules directly into `vendor_sepolicy.cil` and handle `precompiled_sepolicy` to prevent bootloops.
+
+### 3. The `deep_buffer` Output Routing Bypass (Unprocessed Media Streams)
+* **The Cause:** By default in Android, media players (Spotify, YouTube Music, streaming browsers, and games) route audio using `AUDIO_OUTPUT_FLAG_DEEP_BUFFER` through a dedicated large buffer output thread to save CPU power. However, global effects registered on Session 0 (such as Dolby DAP) are attached strictly to Android's primary mixer thread (`AUDIO_OUTPUT_FLAG_PRIMARY`). Because the `deep_buffer` thread has `0 Effect Chains`, media streams bypass Dolby DAP entirely, causing audio to sound identical regardless of selected profiles or EQ slider positions!
+* **The Fix:** Remove the `deep_buffer` mixPort and clean the route sources in `audio_policy_configuration.xml` (located in `vendor/etc/` and `vendor/etc/audio/`). This safely forces Android's Audio Policy to route 100% of media playback through the primary output thread, where Dolby Atmos DAP processes every mix cycle in real time with 0 underruns.
 
 ---
 

@@ -264,7 +264,51 @@ Apply only `moto_sst` (Motorola Spatial Sound) and volume listeners (`dvl_*`) on
 
 ---
 
-## 5. SELinux in Kitchen: CIL Rules, Precompiled Sepolicy & File Contexts
+## 5. Configuration Guide for `audio_policy_configuration.xml` (The Critical `deep_buffer` Bypass)
+
+> [!IMPORTANT]
+> **Why do Dolby profiles and equalizer sliders seem to have no effect on sound?**
+> In Android, media playback applications (Spotify, YouTube Music, local media players, web browsers, games) route audio through the `deep_buffer` mixPort using `AUDIO_OUTPUT_FLAG_DEEP_BUFFER` to reduce power consumption with a large buffer (~100-200ms).
+> 
+> However, in the architecture of `AudioPolicyManager` and `AudioFlinger`, global Session 0 effects (such as Dolby DAP registered by `daxService`) attach **strictly to the primary output thread** (`primary output`, `AUDIO_OUTPUT_FLAG_PRIMARY`).
+> 
+> The `deep_buffer` thread executes with **0 Effect Chains (`0 Effect Chains`)**. Therefore, the media audio stream completely bypasses `libswdap.so`, resulting in identical audio across all profiles and sliders even though the Dolby interface works without errors.
+
+### Step 1: Locate Audio Policy Configuration Files
+In the `/vendor` partition, edit:
+1. `vendor/etc/audio/audio_policy_configuration.xml` (primary configuration on Snapdragon 685)
+2. `vendor/etc/audio_policy_configuration.xml` (general fallback/routing configuration)
+
+### Step 2: Remove the `deep_buffer` Declaration from `<mixPorts>`
+Locate the `<mixPort name="deep_buffer" ...>` block inside `<mixPorts>` and remove it entirely:
+
+```xml
+<!-- REMOVE THIS BLOCK: -->
+<mixPort name="deep_buffer" role="source"
+        flags="AUDIO_OUTPUT_FLAG_DEEP_BUFFER">
+    <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+</mixPort>
+```
+
+### Step 3: Remove `deep_buffer` References in `<routes>`
+In `<routes>`, remove `deep_buffer,` or `,deep_buffer` from the `sources="..."` attribute on all output routes (`Speaker`, `Earpiece`, `Wired Headset`, `Wired Headphones`, `BT A2DP Out`, etc.):
+
+```xml
+<!-- BEFORE: -->
+<route type="mix" sink="Speaker"
+       sources="primary output,raw,deep_buffer,direct_pcm,compressed_offload,voip_rx,mmap_no_irq_out"/>
+
+<!-- AFTER (Clean): -->
+<route type="mix" sink="Speaker"
+       sources="primary output,raw,direct_pcm,compressed_offload,voip_rx,mmap_no_irq_out"/>
+```
+
+**Result:** With the `deep_buffer` mixPort removed, Android's audio system routes 100% of music, videos, and games through `primary output`. In this thread, Dolby Atmos DAP actively processes every single mix cycle (`Effect ID DAP Session 0 / Active tracks: 1`), ensuring profile switches (Movie, Music, Dynamic, Game) and custom equalizer adjustments physically modify audio output in real time with 0 underruns.
+
+---
+
+## 6. SELinux in Kitchen: CIL Rules, Precompiled Sepolicy & File Contexts
 
 In Android 14/15, SELinux policies are split into plain-text CIL (Common Intermediate Language) files.
 
@@ -338,7 +382,7 @@ Open `vendor/etc/selinux/vendor_file_contexts` and append the label for the HAL 
 
 ---
 
-## 6. File Permissions and `fs_config`
+## 7. File Permissions and `fs_config`
 
 In tools like **CRB Kitchen** or **SuperR's Kitchen**, UNIX file ownership and modes are configured in `vendor_fs_config` and `system_fs_config`.
 
@@ -367,7 +411,7 @@ system/etc/sysconfig/.*\.xml 0 0 0644
 
 ---
 
-## 7. System Properties in `build.prop`
+## 8. System Properties in `build.prop`
 
 Open `vendor/build.prop` (or `system/build.prop`) in your kitchen and append the following properties:
 
@@ -393,7 +437,7 @@ vendor.audio.offload.multiple.enabled=false
 
 ---
 
-## 8. Repacking & Post-Flash Diagnostics
+## 9. Repacking & Post-Flash Diagnostics
 
 1. Repack modified partitions into **EROFS** or **EXT4** images using your kitchen tool.
 2. Build `super.img` with `lpmake`.
@@ -425,9 +469,17 @@ adb shell "logcat -d | grep -iE 'fillDax|setGraphic|DolbyAudio'"
 ```
 *Expected: Clean execution of `setGraphicEqualizerBandGains` without any `DolbyAudioEffects is not accessible` errors.*
 
+### Diagnostic 4: Verify Real-Time DAP Pipeline Processing
+Play audio in Spotify, YouTube Music, or a local media player, then run:
+```bash
+adb shell "dumpsys media.audio_flinger | grep -A 2 'name: DAP' -B 2"
+```
+*Expected Output:*
+The `DAP` effect must show `State: 003` (Active), `Enabled: y` on the `AudioOut_D` thread (`primary output`). The HAL processing loop counter (`EffectHal::threadLoop n=...`) will rapidly increment, confirming 100% of audio samples are actively passing through Dolby Atmos DAP.
+
 ---
 
-## 9. Credits & Acknowledgements
+## 10. Credits & Acknowledgements
 
 * **[Rei Ryuki (reiryuki)](https://github.com/reiryuki)** — Special thanks and major credit for creating the original Magisk modules that served as the upstream source for the base binaries and libraries:
   * [Moto-Core-Magisk-Module](https://github.com/reiryuki/Moto-Core-Magisk-Module)

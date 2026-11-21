@@ -264,7 +264,51 @@ Aplica únicamente `moto_sst` (Motorola Spatial Sound) y los niveladores `dvl_*`
 
 ---
 
-## 5. SELinux en Kitchen: Reglas CIL, Precompiled Sepolicy y File Contexts
+## 5. Guía de Configuración de `audio_policy_configuration.xml` (El Bypass Crítico de `deep_buffer`)
+
+> [!IMPORTANT]
+> **¿Por qué los perfiles de Dolby y los deslizadores del ecualizador parecen no cambiar el sonido?**
+> En Android, las aplicaciones de reproducción multimedia (Spotify, YouTube Music, reproductores locales, navegadores, juegos) enrutan el audio a través del mixPort `deep_buffer` con la bandera `AUDIO_OUTPUT_FLAG_DEEP_BUFFER` para reducir el consumo energético usando un buffer grande (~100-200ms).
+> 
+> Sin embargo, en la arquitectura de `AudioPolicyManager` y `AudioFlinger`, los efectos globales de la Sesión 0 (como Dolby DAP registrado por `daxService`) se enlazan **exclusivamente al hilo de salida primario** (`primary output`, `AUDIO_OUTPUT_FLAG_PRIMARY`).
+> 
+> El hilo de `deep_buffer` se ejecuta con **0 Cadenas de Efectos (`0 Effect Chains`)**. Por lo tanto, el flujo de audio de la música salta por completo la librería `libswdap.so`, provocando que el usuario escuche el sonido exactamente igual en todos los perfiles aunque la interfaz de Dolby funcione sin errores.
+
+### Paso 1: Localizar los archivos de política de audio
+En la partición `/vendor`, edita los archivos:
+1. `vendor/etc/audio/audio_policy_configuration.xml` (archivo primario en Snapdragon 685)
+2. `vendor/etc/audio_policy_configuration.xml` (archivo de respaldo/enrutamiento general)
+
+### Paso 2: Eliminar la declaración de `deep_buffer` en `<mixPorts>`
+Busca el bloque `<mixPort name="deep_buffer" ...>` dentro de `<mixPorts>` y elimínalo por completo:
+
+```xml
+<!-- ELIMINAR ESTE BLOQUE: -->
+<mixPort name="deep_buffer" role="source"
+        flags="AUDIO_OUTPUT_FLAG_DEEP_BUFFER">
+    <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+             samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+</mixPort>
+```
+
+### Paso 3: Limpiar las referencias a `deep_buffer` en `<routes>`
+En la sección `<routes>`, elimina la palabra `deep_buffer,` o `,deep_buffer` de las fuentes (`sources="..."`) en todas las rutas de salida (`Speaker`, `Earpiece`, `Wired Headset`, `Wired Headphones`, `BT A2DP Out`, etc.):
+
+```xml
+<!-- ANTES: -->
+<route type="mix" sink="Speaker"
+       sources="primary output,raw,deep_buffer,direct_pcm,compressed_offload,voip_rx,mmap_no_irq_out"/>
+
+<!-- DESPUÉS (Limpio): -->
+<route type="mix" sink="Speaker"
+       sources="primary output,raw,direct_pcm,compressed_offload,voip_rx,mmap_no_irq_out"/>
+```
+
+**Resultado:** Al no existir el mixPort `deep_buffer`, el subsistema de audio de Android enruta el 100% de la música, videos y juegos a través de `primary output`. En este hilo, Dolby Atmos DAP procesa activamente cada ciclo de mezcla (`Effect ID DAP Session 0 / Active tracks: 1`), haciendo que cada cambio de perfil (Cine, Música, Dinámico, Juego) y cada ajuste del ecualizador gráfico modifique el sonido físico en tiempo real con 0 underruns.
+
+---
+
+## 6. SELinux en Kitchen: Reglas CIL, Precompiled Sepolicy y File Contexts
 
 En Android 14/15, las políticas de SELinux ya no se compilan en un archivo monolítico, sino que se dividen en archivos de texto en formato CIL (Common Intermediate Language). 
 
@@ -338,7 +382,7 @@ Abre `vendor/etc/selinux/vendor_file_contexts` y agrega la etiqueta para el ejec
 
 ---
 
-## 6. Permisos de Archivos y `fs_config`
+## 7. Permisos de Archivos y `fs_config`
 
 En herramientas como **CRB Kitchen** o **SuperR's Kitchen**, los permisos UNIX (UID, GID, Mode) se definen en los archivos de configuración de la cocina (`system_fs_config` y `vendor_fs_config`).
 
@@ -369,7 +413,7 @@ system/etc/sysconfig/.*\.xml 0 0 0644
 
 ---
 
-## 7. Propiedades en `build.prop`
+## 8. Propiedades en `build.prop`
 
 Abre `vendor/build.prop` (o `system/build.prop`) de la cocina y añade las siguientes propiedades para forzar el enrutamiento DSP a Dolby:
 
@@ -395,7 +439,7 @@ vendor.audio.offload.multiple.enabled=false
 
 ---
 
-## 8. Reempaquetado y Diagnóstico tras el Flasheo
+## 9. Reempaquetado y Diagnóstico tras el Flasheo
 
 1. Reempaqueta las particiones modificadas (`system.img`, `vendor.img`, etc.) en formato **EROFS** o **EXT4** con tu cocina.
 2. Reconstruye `super.img` mediante `lpmake` o el generador de tu herramienta.
@@ -427,9 +471,17 @@ adb shell "logcat -d | grep -iE 'fillDax|setGraphic|DolbyAudio'"
 ```
 *Deberás ver la llamada `setGraphicEqualizerBandGains` procesada con éxito y sin advertencias de `DolbyAudioEffects is not accessible`.*
 
+### Diagnóstico 4: Comprobar el procesamiento en tiempo real de Dolby DAP
+Reproduce cualquier canción en Spotify, YouTube o reproductor multimedia local y ejecuta:
+```bash
+adb shell "dumpsys media.audio_flinger | grep -A 2 'name: DAP' -B 2"
+```
+*Salida requerida:*
+El efecto `DAP` debe figurar con `State: 003` (Activo), `Enabled: y` dentro del hilo `AudioOut_D` (`primary output`). El contador de ciclos del HAL (`EffectHal::threadLoop n=...`) debe incrementar rápidamente, confirmando que el 100% del audio está siendo procesado por Dolby Atmos.
+
 ---
 
-## 9. Créditos y Agradecimientos
+## 10. Créditos y Agradecimientos
 
 * **[Rei Ryuki (reiryuki)](https://github.com/reiryuki)** — Agradecimiento especial por la creación de los módulos originales para Magisk que sirvieron como fuente de los binarios y librerías base:
   * [Moto-Core-Magisk-Module](https://github.com/reiryuki/Moto-Core-Magisk-Module)
